@@ -28,6 +28,9 @@
       --amber-soft:rgba(217,164,65,0.14);
       --red:#C4544A;
       --red-soft:rgba(196,84,74,0.14);
+      --violet:#8D85D6;
+      --violet-light:#B0A9E8;
+      --violet-soft:rgba(141,133,214,0.14);
       --surface-hover:#1B2330;
       --radius:14px;
       --radius-sm:9px;
@@ -445,6 +448,41 @@
     }
     mark{background:var(--gold-soft);color:var(--gold-light);border-radius:3px;padding:0 1px;}
 
+    /* ============== INSIGHTS: medidor de salud + ranking ============== */
+    .insights-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+    .gauge-wrap{position:relative;height:160px;display:flex;align-items:center;justify-content:center;}
+    .gauge-svg{width:220px;height:150px;overflow:visible;}
+    .gauge-needle{transform-origin:100px 100px;transition:transform 1s cubic-bezier(.22,.9,.2,1);}
+    .gauge-center{position:absolute;bottom:6px;left:0;right:0;text-align:center;}
+    .gauge-value{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;color:var(--text);}
+    .gauge-status{font-size:11px;letter-spacing:.06em;margin-top:2px;}
+    .gauge-legend{display:flex;justify-content:center;gap:16px;margin-top:6px;font-size:11px;color:var(--text-faint);}
+    .gauge-legend span{display:flex;align-items:center;gap:5px;}
+    .gauge-legend i{width:7px;height:7px;border-radius:50%;display:inline-block;}
+
+    .ranking-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;}
+    .ranking-item{
+      display:flex;align-items:center;gap:12px;cursor:pointer;
+      padding:6px 8px;margin:0 -8px;border-radius:9px;
+      transition:background .15s var(--ease);
+    }
+    .ranking-item:hover{background:var(--surface-hover);}
+    .ranking-item:hover .ranking-casa{color:var(--gold-light);}
+    .rank-num{
+      width:24px;height:24px;flex:0 0 24px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;
+      background:var(--violet-soft);color:var(--violet-light);
+    }
+    .ranking-item:nth-child(1) .rank-num{background:var(--gold-soft);color:var(--gold-light);}
+    .ranking-body{flex:1;min-width:0;}
+    .ranking-top{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;margin-bottom:5px;}
+    .ranking-casa{color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .15s var(--ease);}
+    .ranking-saldo{font-family:'JetBrains Mono',monospace;color:var(--text-dim);flex:0 0 auto;}
+    .ranking-track{height:5px;border-radius:4px;background:var(--surface-2);overflow:hidden;}
+    .ranking-fill{height:100%;border-radius:4px;width:0;transition:width .8s var(--ease);background:linear-gradient(90deg,var(--violet),var(--gold));}
+
+
     /* ============== FOCO POR TECLADO ============== */
     .kpi-card:focus-visible,
     .tab-btn:focus-visible,
@@ -538,6 +576,7 @@
       .main{padding:20px;}
       .kpis{grid-template-columns:repeat(2,1fr);}
       .charts-row{grid-template-columns:1fr;}
+      .insights-row{grid-template-columns:1fr;}
       .finance-grid{grid-template-columns:1fr;gap:14px;}
     }
     @media (max-width:680px){
@@ -830,7 +869,7 @@ function renderMain(){
 
   const main = document.getElementById('mainContent');
   const debtorsHtml = d.mostrarDeudores !== false ? buildDebtorsCard(d) : '';
-  main.innerHTML = buildTopbar(d) + buildKpis(d) + buildChartsRow() + buildFinanceRow(d) + debtorsHtml;
+  main.innerHTML = buildTopbar(d) + buildKpis(d) + buildChartsRow() + buildFinanceRow(d) + buildInsightsRow(d) + debtorsHtml;
 
   // Cada sección corre en su propio try/catch: si una falla, las demás igual se muestran.
   try { document.getElementById('btnRefresh').addEventListener('click', () => cargarCondominio(state.activo)); }
@@ -840,7 +879,9 @@ function renderMain(){
   try { wireLogo(d); } catch (e) { console.error('logo', e); }
   try { renderDonut(d); } catch (e) { console.error('donut', e); showChartError('donutWrap'); }
   try { renderBars(d); } catch (e) { console.error('bars', e); showChartError('barsWrap'); }
+  try { renderGauge(d); } catch (e) { console.error('gauge', e); showChartError('gaugeWrap'); }
   if (d.mostrarDeudores !== false) {
+    try { renderRanking(d); } catch (e) { console.error('ranking', e); showChartError('rankingWrap'); }
     try { renderTabs(d); } catch (e) { console.error('tabs', e); }
     try { renderTable(d); } catch (e) { console.error('table', e); }
   }
@@ -1206,6 +1247,121 @@ function buildFinanceRow(d){
       '</div>' +
     '</div>'
   );
+}
+
+/* ---------- Insights row: medidor de salud financiera + ranking de deudores ---------- */
+function buildInsightsRow(d){
+  const conRanking = d.mostrarDeudores !== false;
+  return (
+    '<div class="insights-row fade-in"' + (conRanking ? '' : ' style="grid-template-columns:1fr;max-width:520px;"') + '>' +
+      '<div class="card">' +
+        '<div class="card-header">' +
+          '<div><div class="card-title">Salud financiera</div><div class="card-title-sub">Egresos como porcentaje de los ingresos del mes</div></div>' +
+        '</div>' +
+        '<div class="gauge-wrap" id="gaugeWrap"></div>' +
+      '</div>' +
+      (conRanking ?
+        '<div class="card">' +
+          '<div class="card-header">' +
+            '<div><div class="card-title">Top deudores</div><div class="card-title-sub">Casas con mayor saldo pendiente</div></div>' +
+          '</div>' +
+          '<ul class="ranking-list" id="rankingWrap"></ul>' +
+        '</div>'
+      : '') +
+    '</div>'
+  );
+}
+
+/** Combina las 4 listas de deudores en un solo arreglo, conservando de qué pestaña viene cada uno. */
+function getAllDeudores(d){
+  const out = [];
+  TAB_DEFS.forEach(t => {
+    (d.listas[t.key] || []).forEach(item => out.push({ casa: item.casa, saldo: item.saldo, tabKey: t.key }));
+  });
+  return out;
+}
+
+/** Medidor semicircular: egresos/ingresos, con zonas de color y aguja animada. */
+function renderGauge(d){
+  const wrap = document.getElementById('gaugeWrap');
+  const ingresos = Number(d.ingresos) || 0;
+  const egresos = Number(d.egresos) || 0;
+  const ratioReal = ingresos > 0 ? (egresos / ingresos * 100) : (egresos > 0 ? 150 : 0);
+  const ratio = Math.max(0, Math.min(ratioReal, 150)); // se limita visualmente a 150%
+
+  let status, statusColor;
+  if (ratioReal <= 70) { status = 'Saludable'; statusColor = 'var(--teal)'; }
+  else if (ratioReal <= 95) { status = 'Atención'; statusColor = 'var(--amber)'; }
+  else { status = 'Riesgo'; statusColor = 'var(--red)'; }
+
+  const trackColor = getCss('--surface-2');
+  const teal = getCss('--teal'), amber = getCss('--amber'), red = getCss('--red');
+  // Fracciones de la semicircunferencia (pathLength normalizado a 100): 0-70% sano, 70-95% atención, 95-150% riesgo.
+  const zTeal = 70/150*100, zAmber = 25/150*100, zRed = 55/150*100;
+  const needleAngle = (ratio/150*180) - 90;
+
+  wrap.innerHTML =
+    '<svg class="gauge-svg" viewBox="0 0 200 115">' +
+      '<path d="M20,100 A80,80 0 0 1 180,100" fill="none" stroke="' + trackColor + '" stroke-width="16" pathLength="100"/>' +
+      '<path d="M20,100 A80,80 0 0 1 180,100" fill="none" stroke="' + teal + '" stroke-width="16" pathLength="100" stroke-dasharray="' + zTeal + ' 100" stroke-dashoffset="0"/>' +
+      '<path d="M20,100 A80,80 0 0 1 180,100" fill="none" stroke="' + amber + '" stroke-width="16" pathLength="100" stroke-dasharray="' + zAmber + ' 100" stroke-dashoffset="-' + zTeal + '"/>' +
+      '<path d="M20,100 A80,80 0 0 1 180,100" fill="none" stroke="' + red + '" stroke-width="16" pathLength="100" stroke-dasharray="' + zRed + ' 100" stroke-dashoffset="-' + (zTeal + zAmber) + '"/>' +
+      '<g class="gauge-needle" style="transform:rotate(' + needleAngle + 'deg)">' +
+        '<line x1="100" y1="100" x2="100" y2="32" stroke="' + getCss('--text') + '" stroke-width="2.5" stroke-linecap="round"/>' +
+        '<circle cx="100" cy="100" r="6" fill="' + getCss('--text') + '"/>' +
+      '</g>' +
+    '</svg>' +
+    '<div class="gauge-center">' +
+      '<div class="gauge-value">' + Math.round(ratioReal) + '%</div>' +
+      '<div class="gauge-status" style="color:' + statusColor + '">' + status + '</div>' +
+    '</div>';
+
+  // La aguja arranca en 0 y anima hacia su posición real.
+  const needle = wrap.querySelector('.gauge-needle');
+  needle.style.transform = 'rotate(-90deg)';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    needle.style.transform = 'rotate(' + needleAngle + 'deg)';
+  }));
+}
+
+/** Ranking de las 5 casas con mayor saldo pendiente, cruzando las 4 listas de deudores. */
+function renderRanking(d){
+  const wrap = document.getElementById('rankingWrap');
+  if (!wrap) return;
+  const top = getAllDeudores(d).sort((a, b) => b.saldo - a.saldo).slice(0, 5);
+
+  if (top.length === 0){
+    wrap.innerHTML = '<div class="empty-table">No hay deudores registrados.</div>';
+    return;
+  }
+
+  const max = Math.max(top[0].saldo, 1);
+  wrap.innerHTML = top.map((item, i) =>
+    '<li class="ranking-item" data-casa="' + esc(item.casa) + '" data-tab="' + item.tabKey + '" tabindex="0" role="button">' +
+      '<div class="rank-num">' + (i + 1) + '</div>' +
+      '<div class="ranking-body">' +
+        '<div class="ranking-top"><span class="ranking-casa">' + esc(item.casa) + '</span><span class="ranking-saldo">' + formatMoney(item.saldo) + '</span></div>' +
+        '<div class="ranking-track"><div class="ranking-fill" data-w="' + (item.saldo/max*100) + '"></div></div>' +
+      '</div>' +
+    '</li>'
+  ).join('');
+
+  requestAnimationFrame(() => {
+    wrap.querySelectorAll('.ranking-fill').forEach(el => { el.style.width = el.getAttribute('data-w') + '%'; });
+  });
+
+  wrap.querySelectorAll('.ranking-item').forEach(li => {
+    const go = () => {
+      state.tabActiva = li.getAttribute('data-tab');
+      state.debtorSearch = li.getAttribute('data-casa');
+      renderTabs(d);
+      renderTable(d);
+      const target = document.getElementById('debtorsCard');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    li.addEventListener('click', go);
+    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); go(); } });
+  });
 }
 
 /* ---------- Debtors card ---------- */
